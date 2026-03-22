@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FuelWatch NG — Live Nigerian Fuel Prices</title>
+<meta name="description" content="Real-time crowdsourced fuel prices across Nigeria. Track PMS, Diesel and Kerosene prices by state.">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0a0a0a">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
+<!-- Firebase -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+  import { getFirestore, collection, addDoc, getDocs, query, orderBy, limit, where, serverTimestamp, deleteDoc, doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+  import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyA1YkTvk7wwknMXksyjOr1vZmDsQ3HQivM",
+    authDomain: "fuelwatch-ng.firebaseapp.com",
+    projectId: "fuelwatch-ng",
+    storageBucket: "fuelwatch-ng.firebasestorage.app",
+    messagingSenderId: "312017003053",
+    appId: "1:312017003053:web:aca83b9312868963fecea4"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const fdb = getFirestore(app);
+  const auth = getAuth(app);
+
+  window._fb = { fdb, auth, collection, addDoc, getDocs, query, orderBy, limit, where, serverTimestamp, deleteDoc, doc, updateDoc, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail };
+  window._fbReady = true;
+  document.dispatchEvent(new Event('firebaseReady'));
+</script>
+
+<style>
+:root {
+  --bg: #0a0a0a;
+  --bg2: #111111;
+  --bg3: #1a1a1a;
+  --card: #141414;
+  --border: rgba(255,255,255,0.07);
+  --border2: rgba(255,255,255,0.12);
+  --text: #f0f0f0;
+  --muted: #666;
+  --muted2: #888;
+  --green: #00c853;
+  --green2: #00e676;
+  --amber: #ffab00;
+  --amber2: #ffd740;
+  --red: #ff1744;
+  --red2: #ff5252;
+  --accent: #00c853;
+  --pms: #00c853;
+  --diesel: #2979ff;
+  --kerosene: #ff6d00;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{font-family:'Space Grotesk',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;}
+::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-track{background:var(--bg);}::-webkit-scrollbar-thumb{background:var(--bg3);border-radius:2px;}
+
+/* ── LOADING ── */
+#loadingScreen{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;gap:20px;}
+.load-logo{font-size:32px;font-weight:700;letter-spacing:-1px;}
+.load-logo span{color:var(--green);}
+.load-bar{width:200px;height:2px;background:var(--bg3);border-radius:1px;overflow:hidden;}
+.load-fill{height:100%;background:var(--green);border-radius:1px;animation:loadfill 1.5s ease forwards;}
+@keyframes loadfill{from{width:0}to{width:100%}}
+
+/* ── NAV ── */
+nav{position:fixed;top:0;left:0;right:0;height:58px;background:rgba(10,10,10,0.92);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 20px;z-index:200;}
+.nav-brand{font-size:18px;font-weight:700;letter-spacing:-0.5px;cursor:pointer;display:flex;align-items:center;gap:8px;}
+.nav-brand .dot{width:8px;height:8px;border-radius:50%;background:var(--green);animation:pulse 2s infinite;}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.5;transform:scale(1.4);}}
+.nav-brand span{color:var(--green);}
+.nav-tabs{display:flex;gap:4px;}
+.nav-tab{padding:7px 14px;border:none;background:none;color:var(--muted2);font-family:'Space Grotesk',sans-serif;font-size:13px;font-weight:500;cursor:pointer;border-radius:8px;transition:all .2s;}
+.nav-tab:hover{color:var(--text);background:var(--bg3);}
+.nav-tab.active{color:var(--green);background:rgba(0,200,83,0.1);}
+.nav-right{display:flex;align-items:center;gap:10px;}
+.btn-submit-nav{background:var(--green);color:#000;border:none;padding:8px 16px;border-radius:8px;font-family:'Space Grotesk',sans-serif;font-size:13px;font-weight:600;cursor:pointer;transition:all .2s;}
+.btn-submit-nav:hover{background:var(--green2);transform:translateY(-1px);}
+.mob-menu{display:none;background:none;border:none;color:var(--text);font-size:20px;cursor:pointer;padding:4px;}
+
+/* ── PAGES ── */
+.page{display:none;padding-top:58px;min-height:100vh;}
+.page.active{display:block;}
+
+/* ── HOME PAGE ── */
+.hero-strip{background:linear-gradient(135deg,#0a1a0f 0%,#0a0a0a 60%);padding:36px 20px 28px;border-bottom:1px solid var(--border);}
+.hero-strip h1{font-size:clamp(22px,4vw,34px);font-weight:700;letter-spacing:-0.8px;margin-bottom:8px;}
+.hero-strip h1 em{font-style:normal;color:var(--green);}
+.hero-strip p{font-size:14px;color:var(--muted2);max-width:500px;}
+.live-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(0,200,83,0.1);border:1px solid rgba(0,200,83,0.2);color:var(--green);padding:4px 10px;border-radius:20px;font-size:11px;font-weight:600;letter-spacing:0.5px;margin-bottom:14px;}
+.live-badge::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 2s infinite;}
+
+.filter-bar{display:flex;gap:10px;padding:16px 20px;border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:center;}
+.filter-select{background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:9px 14px;border-radius:8px;font-family:'Space Grotesk',sans-serif;font-size:13px;outline:none;cursor:pointer;transition:border .2s;}
+.filter-select:focus{border-color:var(--green);}
+.filter-select option{background:var(--bg2);}
+.fuel-tabs{display:flex;gap:6px;margin-left:auto;}
+.fuel-tab{padding:8px 14px;border:1px solid var(--border);background:none;color:var(--muted2);border-radius:8px;font-family:'Space Grotesk',sans-serif;font-size:12px;font-weight:600;cursor:pointer;transition:all .2s;letter-spacing:0.3px;}
+.fuel-tab.active.pms{background:rgba(0,200,83,0.1);border-color:rgba(0,200,83,0.3);color:var(--pms);}
+.fuel-tab.active.diesel{background:rgba(41,121,255,0.1);border-color:rgba(41,121,255,0.3);color:var(--diesel);}
+.fuel-tab.active.kerosene{background:rgba(255,109,0,0.1);border-color:rgba(255,109,0,0.3);color:var(--kerosene);}
+
+.stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;padding:16px 20px;border-bottom:1px solid var(--border);}
+.stat-mini{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px 16px;}
+.stat-mini-label{font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;}
+.stat-mini-value{font-family:'Space Mono',monospace;font-size:22px;font-weight:700;}
+.stat-mini-sub{font-size:11px;color:var(--muted);margin-top:3px;}
+
+.feed-section{padding:16px 20px;}
+.feed-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+.feed-title{font-size:14px;font-weight:600;color:var(--muted2);letter-spacing:0.5px;text-transform:uppercase;}
+.price-count{font-size:12px;color:var(--muted);font-family:'Space Mono',monospace;}
+
+.price-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;}
+.price-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;transition:all .2s;position:relative;overflow:hidden;}
+.price-card:hover{border-color:var(--border2);transform:translateY(-2px);}
+.price-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;}
+.price-card.pms::before{background:var(--pms);}
+.price-card.diesel::before{background:var(--diesel);}
+.price-card.kerosene::before{background:var(--kerosene);}
+.pc-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;}
+.pc-location{font-size:15px;font-weight:600;}
+.pc-state{font-size:11px;color:var(--muted);margin-top:2px;}
+.pc-price{font-family:'Space Mono',monospace;font-size:26px;font-weight:700;text-align:right;}
+.pc-price.cheap{color:var(--green);}
+.pc-price.mid{color:var(--amber);}
+.pc-price.exp{color:var(--red);}
+.pc-price span{font-size:12px;font-weight:400;color:var(--muted);}
+.pc-bottom{display:flex;align-items:center;justify-content:space-between;}
+.pc-fuel-badge{display:inline-flex;padding:3px 9px;border-radius:6px;font-size:10px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;}
+.badge-pms{background:rgba(0,200,83,0.1);color:var(--pms);}
+.badge-diesel{background:rgba(41,121,255,0.1);color:var(--diesel);}
+.badge-kerosene{background:rgba(255,109,0,0.1);color:var(--kerosene);}
+.pc-time{font-size:11px;color:var(--muted);}
+.pc-station{font-size:11px;color:var(--muted2);margin-top:6px;}
+
+.empty-feed{text-align:center;padding:60px 20px;color:var(--muted);}
+.empty-feed .ei{font-size:48px;margin-bottom:16px;}
+.empty-feed h3{font-size:17px;color:var(--text);margin-bottom:8px;}
+.empty-feed p{font-size:13px;}
+
+/* ── SUBMIT PAGE ── */
+.submit-wrap{max-width:560px;margin:0 auto;padding:32px 20px;}
+.submit-wrap h2{font-size:24px;font-weight:700;letter-spacing:-0.5px;margin-bottom:6px;}
+.submit-wrap .sub{font-size:13px;color:var(--muted2);margin-bottom:32px;}
+.form-group{margin-bottom:18px;}
+.form-group label{display:block;font-size:11px;font-weight:600;color:var(--muted2);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;}
+.form-group input,.form-group select{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:13px 16px;color:var(--text);font-family:'Space Grotesk',sans-serif;font-size:14px;outline:none;transition:border .2s;}
+.form-group input:focus,.form-group select:focus{border-color:var(--green);}
+.form-group select option{background:var(--bg2);}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.fuel-type-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+.fuel-type-btn{padding:14px;border:1px solid var(--border);background:var(--bg3);color:var(--muted2);border-radius:10px;font-family:'Space Grotesk',sans-serif;font-size:13px;font-weight:600;cursor:pointer;transition:all .2s;text-align:center;}
+.fuel-type-btn:hover{border-color:var(--border2);color:var(--text);}
+.fuel-type-btn.active.pms{background:rgba(0,200,83,0.1);border-color:var(--pms);color:var(--pms);}
+.fuel-type-btn.active.diesel{background:rgba(41,121,255,0.1);border-color:var(--diesel);color:var(--diesel);}
+.fuel-type-btn.active.kerosene{background:rgba(255,109,0,0.1);border-color:var(--kerosene);color:var(--kerosene);}
+.fuel-type-icon{font-size:22px;margin-bottom:4px;}
+.btn-submit-big{width:100%;background:var(--green);color:#000;border:none;padding:16px;border-radius:10px;font-family:'Space Grotesk',sans-serif;font-size:15px;font-weight:700;cursor:pointer;transition:all .2s;margin-top:8px;letter-spacing:0.3px;}
+.btn-submit-big:hover{background:var(--green2);transform:translateY(-1px);}
+.btn-submit-big:disabled{opacity:.5;cursor:not-allowed;transform:none;}
+.submit-success{background:rgba(0,200,83,0.08);border:1px solid rgba(0,200,83,0.2);border-radius:10px;padding:20px;text-align:center;display:none;}
+.submit-success .si{font-size:40px;margin-bottom:10px;}
+.submit-success h3{font-size:16px;font-weight:600;color:var(--green);margin-bottom:4px;}
+.submit-success p{font-size:13px;color:var(--muted2);}
+
+/* ── ANALYTICS PAGE ── */
+.analytics-wrap{padding:24px 20px;}
+.analytics-wrap h2{font-size:22px;font-weight:700;letter-spacing:-0.5px;margin-bottom:6px;}
+.analytics-wrap .sub{font-size:13px;color:var(--muted2);margin-bottom:24px;}
+.chart-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-bottom:20px;}
+.chart-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;}
+.chart-card h3{font-size:13px;font-weight:600;color:var(--muted2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:16px;}
+.chart-wrap{position:relative;height:220px;}
+.state-rank{margin-top:20px;}
+.state-rank-item{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);}
+.state-rank-item:last-child{border-bottom:none;}
+.sr-rank{font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);width:20px;}
+.sr-state{font-size:14px;font-weight:500;flex:1;}
+.sr-bar-wrap{flex:2;background:var(--bg3);border-radius:4px;height:6px;overflow:hidden;}
+.sr-bar{height:6px;border-radius:4px;background:var(--green);transition:width .6s ease;}
+.sr-price{font-family:'Space Mono',monospace;font-size:13px;font-weight:700;color:var(--green);}
+
+/* ── ADMIN PAGE ── */
+.admin-wrap{max-width:800px;margin:0 auto;padding:32px 20px;}
+.admin-login{max-width:360px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:32px;}
+.admin-login h2{font-size:20px;font-weight:700;margin-bottom:6px;}
+.admin-login .sub{font-size:13px;color:var(--muted2);margin-bottom:24px;}
+.admin-wrap h2{font-size:22px;font-weight:700;letter-spacing:-0.5px;margin-bottom:6px;}
+.admin-wrap .sub{font-size:13px;color:var(--muted2);margin-bottom:24px;}
+.admin-table{width:100%;border-collapse:collapse;}
+.admin-table th{padding:10px 14px;text-align:left;font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);}
+.admin-table td{padding:12px 14px;font-size:13px;border-bottom:1px solid rgba(255,255,255,0.03);}
+.admin-table tr:hover td{background:rgba(255,255,255,0.02);}
+.btn-del{background:rgba(255,23,68,0.1);border:1px solid rgba(255,23,68,0.2);color:var(--red);padding:4px 10px;border-radius:6px;font-family:'Space Grotesk',sans-serif;font-size:11px;font-weight:600;cursor:pointer;transition:all .2s;}
+.btn-del:hover{background:rgba(255,23,68,0.2);}
+.btn-verify{background:rgba(0,200,83,0.1);border:1px solid rgba(0,200,83,0.2);color:var(--green);padding:4px 10px;border-radius:6px;font-family:'Space Grotesk',sans-serif;font-size:11px;font-weight:600;cursor:pointer;transition:all .2s;margin-right:4px;}
+.btn-verify:hover{background:rgba(0,200,83,0.2);}
+
+/* ── COMMON ── */
+.btn-primary{background:var(--green);color:#000;border:none;padding:12px 24px;border-radius:8px;font-family:'Space Grotesk',sans-serif;font-size:14px;font-weight:600;cursor:pointer;transition:all .2s;}
+.btn-primary:hover{background:var(--green2);transform:translateY(-1px);}
+.btn-primary:disabled{opacity:.5;cursor:not-allowed;transform:none;}
+.btn-outline{background:none;border:1px solid var(--border);color:var(--muted2);padding:10px 20px;border-radius:8px;font-family:'Space Grotesk',sans-serif;font-size:13px;font-weight:500;cursor:pointer;transition:all .2s;}
+.btn-outline:hover{border-color:var(--border2);color:var(--text);}
+.error-msg{background:rgba(255,23,68,0.08);border:1px solid rgba(255,23,68,0.2);color:var(--red);border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:14px;display:none;}
+.toast{position:fixed;bottom:24px;right:20px;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:12px 18px;font-size:13px;z-index:9999;transform:translateY(80px);opacity:0;transition:all .3s;max-width:300px;}
+.toast.show{transform:translateY(0);opacity:1;}
+.toast.success{border-color:rgba(0,200,83,0.3);color:var(--green);}
+.toast.error{border-color:rgba(255,23,68,0.3);color:var(--red);}
+.mob-nav{display:none;position:fixed;inset:0;background:var(--bg2);z-index:300;flex-direction:column;align-items:center;justify-content:center;gap:24px;}
+.mob-nav.open{display:flex;}
+.mob-nav a{font-size:24px;font-weight:600;color:var(--text);text-decoration:none;transition:color .2s;}
+.mob-nav a:hover{color:var(--green);}
+.mob-close{position:absolute;top:20px;right:20px;background:none;border:none;color:var(--muted2);font-size:24px;cursor:pointer;}
+.verified-badge{display:inline-flex;align-items:center;gap:3px;background:rgba(0,200,83,0.08);color:var(--green);padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600;}
+
+@media(max-width:768px){
+  .nav-tabs{display:none;}
+  .mob-menu{display:block;}
+  .form-row{grid-template-columns:1fr;}
+  .fuel-tabs{margin-left:0;margin-top:8px;}
+  .filter-bar{flex-direction:column;align-items:stretch;}
+  .price-grid{grid-template-columns:1fr;}
+  .btn-submit-nav{display:none;}
+}
+</style>
+</head>
+<body>
+
+<!-- LOADING -->
+<div id="loadingScreen">
+  <div class="load-logo">Fuel<span>Watch</span> NG</div>
+  <div class="load-bar"><div class="load-fill"></div></div>
+</div>
+
+<!-- MOBILE NAV -->
+<div class="mob-nav" id="mobNav">
+  <button class="mob-close" onclick="closeMobNav()">✕</button>
+  <a href="#" onclick="navigate('home');closeMobNav()">Home</a>
+  <a href="#" onclick="navigate('submit');closeMobNav()">Submit Price</a>
+  <a href="#" onclick="navigate('analytics');closeMobNav()">Analytics</a>
+  <a href="#" onclick="navigate('admin');closeMobNav()">Admin</a>
+</div>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-brand" onclick="navigate('home')">
+    <div class="dot"></div>
+    Fuel<span>Watch</span> NG
+  </div>
+  <div class="nav-tabs">
+    <button class="nav-tab active" data-page="home" onclick="navigate('home')">Live Prices</button>
+    <button class="nav-tab" data-page="submit" onclick="navigate('submit')">Submit</button>
+    <button class="nav-tab" data-page="analytics" onclick="navigate('analytics')">Analytics</button>
+    <button class="nav-tab" data-page="admin" onclick="navigate('admin')">Admin</button>
+  </div>
+  <div class="nav-right">
+    <button class="btn-submit-nav" onclick="navigate('submit')">+ Submit Price</button>
+    <button class="mob-menu" onclick="openMobNav()">☰</button>
+  </div>
+</nav>
+
+<!-- ══ HOME PAGE ══ -->
+<div class="page active" id="page-home">
+  <div class="hero-strip">
+    <div class="live-badge">LIVE</div>
+    <h1>Real-time fuel prices<br>across <em>Nigeria</em></h1>
+    <p>Crowdsourced by Nigerians, for Nigerians. Submit what you see at the pump today.</p>
+  </div>
+
+  <div class="stats-row" id="homeStats">
+    <div class="stat-mini"><div class="stat-mini-label">Avg PMS Price</div><div class="stat-mini-value" id="avgPMS" style="color:var(--pms)">—</div><div class="stat-mini-sub">per litre</div></div>
+    <div class="stat-mini"><div class="stat-mini-label">Avg Diesel Price</div><div class="stat-mini-value" id="avgDiesel" style="color:var(--diesel)">—</div><div class="stat-mini-sub">per litre</div></div>
+    <div class="stat-mini"><div class="stat-mini-label">Cheapest State</div><div class="stat-mini-value" id="cheapestState" style="color:var(--green);font-size:16px;">—</div><div class="stat-mini-sub" id="cheapestPrice"></div></div>
+    <div class="stat-mini"><div class="stat-mini-label">Reports Today</div><div class="stat-mini-value" id="todayCount" style="color:var(--amber)">0</div><div class="stat-mini-sub">submitted</div></div>
+  </div>
+
+  <div class="filter-bar">
+    <select class="filter-select" id="stateFilter" onchange="renderFeed()">
+      <option value="">All States</option>
+    </select>
+    <div class="fuel-tabs">
+      <button class="fuel-tab active pms" data-fuel="PMS" onclick="setFuelFilter('PMS',this)">⛽ PMS</button>
+      <button class="fuel-tab diesel" data-fuel="Diesel" onclick="setFuelFilter('Diesel',this)">🚛 Diesel</button>
+      <button class="fuel-tab kerosene" data-fuel="Kerosene" onclick="setFuelFilter('Kerosene',this)">🏠 Kerosene</button>
+      <button class="fuel-tab" data-fuel="" onclick="setFuelFilter('',this)">All</button>
+    </div>
+  </div>
+
+  <div class="feed-section">
+    <div class="feed-header">
+      <div class="feed-title">Latest Reports</div>
+      <div class="price-count" id="feedCount">Loading...</div>
+    </div>
+    <div class="price-grid" id="priceFeed">
+      <div class="empty-feed"><div class="ei">⛽</div><h3>Loading prices...</h3></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ SUBMIT PAGE ══ -->
+<div class="page" id="page-submit">
+  <div class="submit-wrap">
+    <h2>Submit a fuel price</h2>
+    <p class="sub">Help others find cheap fuel. Takes 30 seconds. No account needed.</p>
+
+    <div id="submitSuccess" class="submit-success">
+      <div class="si">✅</div>
+      <h3>Price submitted!</h3>
+      <p>Thank you. Your report is now live and helping other Nigerians.</p>
+      <button class="btn-primary" style="margin-top:16px;" onclick="resetSubmitForm()">Submit Another</button>
+    </div>
+
+    <div id="submitForm">
+      <div class="form-group">
+        <label>Fuel Type *</label>
+        <div class="fuel-type-grid">
+          <button class="fuel-type-btn active pms" data-fuel="PMS" onclick="selectFuelType('PMS',this)">
+            <div class="fuel-type-icon">⛽</div>PMS (Petrol)
+          </button>
+          <button class="fuel-type-btn diesel" data-fuel="Diesel" onclick="selectFuelType('Diesel',this)">
+            <div class="fuel-type-icon">🚛</div>Diesel
+          </button>
+          <button class="fuel-type-btn kerosene" data-fuel="Kerosene" onclick="selectFuelType('Kerosene',this)">
+            <div class="fuel-type-icon">🏠</div>Kerosene
+          </button>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>State *</label>
+          <select id="submitState">
+            <option value="">Select state</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>City / Area *</label>
+          <input type="text" id="submitCity" placeholder="e.g. Wuse, Ikeja, GRA">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Price per litre (₦) *</label>
+        <input type="number" id="submitPrice" placeholder="e.g. 620" min="100" max="5000">
+      </div>
+
+      <div class="form-group">
+        <label>Station Name <span style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
+        <input type="text" id="submitStation" placeholder="e.g. NNPC Mega Station, Total Filling Station">
+      </div>
+
+      <div class="error-msg" id="submitError"></div>
+      <button class="btn-submit-big" id="submitBtn" onclick="submitPrice()">Submit Price Report →</button>
+      <p style="font-size:11px;color:var(--muted);margin-top:12px;text-align:center;">Your report is anonymous and goes live immediately.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ══ ANALYTICS PAGE ══ -->
+<div class="page" id="page-analytics">
+  <div class="analytics-wrap">
+    <h2>Price Analytics</h2>
+    <p class="sub">Average fuel prices by state · Updated in real time</p>
+
+    <div class="chart-grid">
+      <div class="chart-card">
+        <h3>PMS Average by State</h3>
+        <div class="chart-wrap"><canvas id="chartPMS"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Fuel Type Comparison</h3>
+        <div class="chart-wrap"><canvas id="chartTypes"></canvas></div>
+      </div>
+    </div>
+
+    <div class="chart-card" style="margin-bottom:16px;">
+      <h3>Cheapest States — PMS Ranking</h3>
+      <div class="state-rank" id="stateRanking">
+        <div style="color:var(--muted);font-size:13px;text-align:center;padding:20px;">Loading data...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ ADMIN PAGE ══ -->
+<div class="page" id="page-admin">
+  <div class="admin-wrap">
+
+    <!-- Login form -->
+    <div id="adminLogin">
+      <div class="admin-login">
+        <h2>Admin Access</h2>
+        <p class="sub">Moderate price submissions</p>
+        <div class="error-msg" id="adminError"></div>
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="adminEmail" placeholder="admin@fuelwatch.ng" onkeydown="if(event.key==='Enter')adminLogin()">
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="adminPass" placeholder="Password" onkeydown="if(event.key==='Enter')adminLogin()">
+        </div>
+        <button class="btn-primary" style="width:100%;" onclick="adminLogin()">Sign In →</button>
+        <p style="font-size:11px;color:var(--muted);margin-top:12px;text-align:center;cursor:pointer;" onclick="adminForgot()">Forgot password?</p>
+      </div>
+    </div>
+
+    <!-- Admin dashboard -->
+    <div id="adminDash" style="display:none;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px;">
+        <div>
+          <h2>Admin Panel</h2>
+          <p class="sub" id="adminUserLabel">Logged in</p>
+        </div>
+        <button class="btn-outline" onclick="adminLogout()">Sign Out</button>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="admin-table">
+          <thead><tr>
+            <th>State / City</th><th>Fuel</th><th>Price</th><th>Station</th><th>Time</th><th>Status</th><th>Actions</th>
+          </tr></thead>
+          <tbody id="adminTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════════
+let allPrices = [];
+let currentFuelFilter = 'PMS';
+let selectedFuelType = 'PMS';
+let currentPage = 'home';
+let adminUser = null;
+let chartPMS = null, chartTypes = null;
+
+const NIGERIAN_STATES = [
+  'Abia','Adamawa','Akwa Ibom','Anambra','Bauchi','Bayelsa','Benue','Borno',
+  'Cross River','Delta','Ebonyi','Edo','Ekiti','Enugu','FCT — Abuja','Gombe',
+  'Imo','Jigawa','Kaduna','Kano','Katsina','Kebbi','Kogi','Kwara',
+  'Lagos','Nasarawa','Niger','Ogun','Ondo','Osun','Oyo',
+  'Plateau','Rivers','Sokoto','Taraba','Yobe','Zamfara'
+];
+
+// Price thresholds for color coding (₦ per litre)
+const PRICE_THRESHOLDS = {
+  PMS: { cheap: 600, mid: 700 },
+  Diesel: { cheap: 1000, mid: 1200 },
+  Kerosene: { cheap: 800, mid: 1000 }
+};
+
+// ══════════════════════════════════════════════
+//  INIT
+// ══════════════════════════════════════════════
+function init() {
+  populateStateDropdowns();
+  loadPrices();
+  initAuthListener();
+  setTimeout(() => {
+    document.getElementById('loadingScreen').style.opacity = '0';
+    document.getElementById('loadingScreen').style.transition = 'opacity 0.4s';
+    setTimeout(() => document.getElementById('loadingScreen').style.display = 'none', 400);
+  }, 1600);
+}
+
+function populateStateDropdowns() {
+  const selects = ['stateFilter', 'submitState'];
+  selects.forEach(id => {
+    const el = document.getElementById(id);
+    const hasAll = id === 'stateFilter';
+    NIGERIAN_STATES.forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s; opt.textContent = s;
+      el.appendChild(opt);
+    });
+  });
+}
+
+if (window._fbReady) { init(); }
+else { document.addEventListener('firebaseReady', init); }
+
+// ══════════════════════════════════════════════
+//  NAVIGATION
+// ══════════════════════════════════════════════
+function navigate(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  const tab = document.querySelector(`.nav-tab[data-page="${page}"]`);
+  if (tab) tab.classList.add('active');
+  currentPage = page;
+  if (page === 'analytics') renderAnalytics();
+  if (page === 'admin' && adminUser) renderAdminTable();
+  window.scrollTo(0, 0);
+}
+function openMobNav() { document.getElementById('mobNav').classList.add('open'); }
+function closeMobNav() { document.getElementById('mobNav').classList.remove('open'); }
+
+// ══════════════════════════════════════════════
+//  LOAD PRICES
+// ══════════════════════════════════════════════
+async function loadPrices() {
+  if (!window._fb) return;
+  try {
+    const { fdb, collection, getDocs, query, orderBy, limit } = window._fb;
+    const q = query(collection(fdb, 'prices'), orderBy('submittedAt', 'desc'), limit(200));
+    const snap = await getDocs(q);
+    allPrices = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderFeed();
+    updateStats();
+  } catch(e) {
+    console.error('Load error:', e);
+    document.getElementById('priceFeed').innerHTML = `<div class="empty-feed"><div class="ei">⚠️</div><h3>Could not load prices</h3><p>Check your connection and try again</p></div>`;
+  }
+}
+
+// ══════════════════════════════════════════════
+//  RENDER FEED
+// ══════════════════════════════════════════════
+function renderFeed() {
+  const stateFilter = document.getElementById('stateFilter').value;
+  let filtered = allPrices.filter(p => {
+    const matchState = !stateFilter || p.state === stateFilter;
+    const matchFuel = !currentFuelFilter || p.fuelType === currentFuelFilter;
+    return matchState && matchFuel;
+  });
+
+  document.getElementById('feedCount').textContent = filtered.length + ' report' + (filtered.length !== 1 ? 's' : '');
+
+  if (!filtered.length) {
+    document.getElementById('priceFeed').innerHTML = `
+      <div class="empty-feed" style="grid-column:1/-1;">
+        <div class="ei">⛽</div>
+        <h3>No prices reported yet</h3>
+        <p>Be the first to submit a price in ${stateFilter || 'Nigeria'}!</p>
+        <button class="btn-primary" style="margin-top:16px;" onclick="navigate('submit')">Submit First Price</button>
+      </div>`;
+    return;
+  }
+
+  document.getElementById('priceFeed').innerHTML = filtered.map(p => {
+    const fuelClass = p.fuelType?.toLowerCase() || 'pms';
+    const thresh = PRICE_THRESHOLDS[p.fuelType] || PRICE_THRESHOLDS.PMS;
+    const priceClass = p.price <= thresh.cheap ? 'cheap' : p.price <= thresh.mid ? 'mid' : 'exp';
+    const timeAgo = getTimeAgo(p.submittedAt?.toDate ? p.submittedAt.toDate() : new Date(p.submittedAt));
+    return `<div class="price-card ${fuelClass}">
+      <div class="pc-top">
+        <div>
+          <div class="pc-location">${p.city || '—'}</div>
+          <div class="pc-state">${p.state || '—'}</div>
+          ${p.verified ? '<span class="verified-badge">✓ Verified</span>' : ''}
+        </div>
+        <div>
+          <div class="pc-price ${priceClass}">₦${Number(p.price).toLocaleString()}<span>/L</span></div>
+        </div>
+      </div>
+      ${p.stationName ? `<div class="pc-station">📍 ${p.stationName}</div>` : ''}
+      <div class="pc-bottom" style="margin-top:10px;">
+        <span class="pc-fuel-badge badge-${fuelClass}">${p.fuelType || 'PMS'}</span>
+        <span class="pc-time">${timeAgo}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function setFuelFilter(fuel, btn) {
+  currentFuelFilter = fuel;
+  document.querySelectorAll('.fuel-tab').forEach(t => t.classList.remove('active'));
+  if (btn) {
+    btn.classList.add('active');
+    if (fuel) btn.classList.add(fuel.toLowerCase());
+  }
+  renderFeed();
+}
+
+// ══════════════════════════════════════════════
+//  STATS
+// ══════════════════════════════════════════════
+function updateStats() {
+  const today = new Date().toDateString();
+  const todayPrices = allPrices.filter(p => {
+    const d = p.submittedAt?.toDate ? p.submittedAt.toDate() : new Date(p.submittedAt);
+    return d.toDateString() === today;
+  });
+  document.getElementById('todayCount').textContent = todayPrices.length;
+
+  const pmsPrices = allPrices.filter(p => p.fuelType === 'PMS' && p.price > 0);
+  const dieselPrices = allPrices.filter(p => p.fuelType === 'Diesel' && p.price > 0);
+
+  if (pmsPrices.length) {
+    const avg = Math.round(pmsPrices.reduce((a, b) => a + Number(b.price), 0) / pmsPrices.length);
+    document.getElementById('avgPMS').textContent = '₦' + avg.toLocaleString();
+  }
+  if (dieselPrices.length) {
+    const avg = Math.round(dieselPrices.reduce((a, b) => a + Number(b.price), 0) / dieselPrices.length);
+    document.getElementById('avgDiesel').textContent = '₦' + avg.toLocaleString();
+  }
+
+  // Cheapest state
+  const byState = {};
+  pmsPrices.forEach(p => {
+    if (!byState[p.state]) byState[p.state] = [];
+    byState[p.state].push(Number(p.price));
+  });
+  const stateAvgs = Object.entries(byState).map(([s, prices]) => ({
+    state: s,
+    avg: Math.round(prices.reduce((a, b) => a + b, 0) / prices.length)
+  })).sort((a, b) => a.avg - b.avg);
+
+  if (stateAvgs.length) {
+    document.getElementById('cheapestState').textContent = stateAvgs[0].state;
+    document.getElementById('cheapestPrice').textContent = '₦' + stateAvgs[0].avg.toLocaleString() + '/L avg';
+  }
+}
+
+// ══════════════════════════════════════════════
+//  SUBMIT PRICE
+// ══════════════════════════════════════════════
+function selectFuelType(fuel, btn) {
+  selectedFuelType = fuel;
+  document.querySelectorAll('.fuel-type-btn').forEach(b => {
+    b.classList.remove('active', 'pms', 'diesel', 'kerosene');
+  });
+  btn.classList.add('active', fuel.toLowerCase());
+}
+
+async function submitPrice() {
+  const state = document.getElementById('submitState').value.trim();
+  const city = document.getElementById('submitCity').value.trim();
+  const price = parseFloat(document.getElementById('submitPrice').value);
+  const station = document.getElementById('submitStation').value.trim();
+  const errEl = document.getElementById('submitError');
+
+  errEl.style.display = 'none';
+  if (!state) { showError(errEl, 'Please select your state'); return; }
+  if (!city) { showError(errEl, 'Please enter your city or area'); return; }
+  if (!price || price < 100 || price > 10000) { showError(errEl, 'Please enter a valid price (₦100 – ₦10,000)'); return; }
+
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true; btn.textContent = 'Submitting...';
+
+  try {
+    const { fdb, collection, addDoc, serverTimestamp } = window._fb;
+    const doc = await addDoc(collection(fdb, 'prices'), {
+      state, city, fuelType: selectedFuelType,
+      price, stationName: station,
+      submittedAt: serverTimestamp(),
+      verified: false
+    });
+    // Add to local cache
+    allPrices.unshift({ id: doc.id, state, city, fuelType: selectedFuelType, price, stationName: station, submittedAt: new Date(), verified: false });
+    updateStats();
+    document.getElementById('submitForm').style.display = 'none';
+    document.getElementById('submitSuccess').style.display = 'block';
+    showToast('✅ Price submitted successfully!', 'success');
+  } catch(e) {
+    showError(errEl, 'Submission failed. Please check your connection.');
+    console.error(e);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Submit Price Report →';
+  }
+}
+
+function resetSubmitForm() {
+  document.getElementById('submitForm').style.display = 'block';
+  document.getElementById('submitSuccess').style.display = 'none';
+  document.getElementById('submitState').value = '';
+  document.getElementById('submitCity').value = '';
+  document.getElementById('submitPrice').value = '';
+  document.getElementById('submitStation').value = '';
+}
+
+// ══════════════════════════════════════════════
+//  ANALYTICS
+// ══════════════════════════════════════════════
+function renderAnalytics() {
+  if (!allPrices.length) {
+    loadPrices().then(() => buildCharts());
+    return;
+  }
+  buildCharts();
+}
+
+function buildCharts() {
+  // PMS by state
+  const byState = {};
+  allPrices.filter(p => p.fuelType === 'PMS' && p.price > 0).forEach(p => {
+    if (!byState[p.state]) byState[p.state] = [];
+    byState[p.state].push(Number(p.price));
+  });
+  const stateAvgs = Object.entries(byState)
+    .map(([s, prices]) => ({ state: s, avg: Math.round(prices.reduce((a, b) => a + b, 0) / prices.length) }))
+    .sort((a, b) => a.avg - b.avg).slice(0, 10);
+
+  if (chartPMS) chartPMS.destroy();
+  const ctx1 = document.getElementById('chartPMS').getContext('2d');
+  chartPMS = new Chart(ctx1, {
+    type: 'bar',
+    data: {
+      labels: stateAvgs.map(s => s.state.length > 10 ? s.state.slice(0, 10) + '…' : s.state),
+      datasets: [{ label: 'Avg ₦/L', data: stateAvgs.map(s => s.avg), backgroundColor: stateAvgs.map(s => s.avg < 650 ? 'rgba(0,200,83,0.7)' : s.avg < 750 ? 'rgba(255,171,0,0.7)' : 'rgba(255,23,68,0.7)'), borderRadius: 4 }]
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#666', font: { size: 10 } }, grid: { display: false } }, y: { ticks: { color: '#666', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.04)' } } } }
+  });
+
+  // Fuel type comparison
+  const fuelAvgs = ['PMS', 'Diesel', 'Kerosene'].map(ft => {
+    const prices = allPrices.filter(p => p.fuelType === ft && p.price > 0);
+    return prices.length ? Math.round(prices.reduce((a, b) => a + Number(b.price), 0) / prices.length) : 0;
+  });
+
+  if (chartTypes) chartTypes.destroy();
+  const ctx2 = document.getElementById('chartTypes').getContext('2d');
+  chartTypes = new Chart(ctx2, {
+    type: 'doughnut',
+    data: {
+      labels: ['PMS', 'Diesel', 'Kerosene'],
+      datasets: [{ data: fuelAvgs, backgroundColor: ['rgba(0,200,83,0.8)', 'rgba(41,121,255,0.8)', 'rgba(255,109,0,0.8)'], borderWidth: 0 }]
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#888', font: { size: 11 } } } } }
+  });
+
+  // State ranking
+  const maxAvg = stateAvgs.length ? stateAvgs[stateAvgs.length - 1].avg : 1;
+  document.getElementById('stateRanking').innerHTML = stateAvgs.length
+    ? stateAvgs.map((s, i) => `<div class="state-rank-item">
+        <span class="sr-rank">${i + 1}</span>
+        <span class="sr-state">${s.state}</span>
+        <div class="sr-bar-wrap"><div class="sr-bar" style="width:${Math.round(s.avg / maxAvg * 100)}%;background:${s.avg < 650 ? 'var(--green)' : s.avg < 750 ? 'var(--amber)' : 'var(--red)'}"></div></div>
+        <span class="sr-price">₦${s.avg.toLocaleString()}</span>
+      </div>`).join('')
+    : '<div style="color:var(--muted);font-size:13px;text-align:center;padding:20px;">No data yet — submit some prices!</div>';
+}
+
+// ══════════════════════════════════════════════
+//  ADMIN
+// ══════════════════════════════════════════════
+function initAuthListener() {
+  if (!window._fb) return;
+  const { auth, onAuthStateChanged } = window._fb;
+  onAuthStateChanged(auth, user => {
+    adminUser = user;
+    if (user) {
+      document.getElementById('adminLogin').style.display = 'none';
+      document.getElementById('adminDash').style.display = 'block';
+      document.getElementById('adminUserLabel').textContent = 'Signed in as ' + user.email;
+      if (currentPage === 'admin') renderAdminTable();
+    } else {
+      document.getElementById('adminLogin').style.display = 'block';
+      document.getElementById('adminDash').style.display = 'none';
+    }
+  });
+}
+
+async function adminLogin() {
+  const email = document.getElementById('adminEmail').value.trim();
+  const pass = document.getElementById('adminPass').value;
+  const errEl = document.getElementById('adminError');
+  errEl.style.display = 'none';
+  if (!email || !pass) { showError(errEl, 'Please enter email and password'); return; }
+  try {
+    const { auth, signInWithEmailAndPassword } = window._fb;
+    await signInWithEmailAndPassword(auth, email, pass);
+  } catch(e) {
+    showError(errEl, 'Invalid email or password');
+  }
+}
+
+async function adminLogout() {
+  const { auth, signOut } = window._fb;
+  await signOut(auth);
+  showToast('Signed out', '');
+}
+
+async function adminForgot() {
+  const email = document.getElementById('adminEmail').value.trim();
+  if (!email) { showToast('Enter your email first', 'error'); return; }
+  try {
+    const { auth, sendPasswordResetEmail } = window._fb;
+    await sendPasswordResetEmail(auth, email);
+    showToast('Reset email sent!', 'success');
+  } catch(e) { showToast('Could not send reset email', 'error'); }
+}
+
+async function renderAdminTable() {
+  const tbody = document.getElementById('adminTableBody');
+  tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:24px;">Loading...</td></tr>';
+  try {
+    const { fdb, collection, getDocs, query, orderBy } = window._fb;
+    const q = query(collection(fdb, 'prices'), orderBy('submittedAt', 'desc'));
+    const snap = await getDocs(q);
+    const prices = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    tbody.innerHTML = prices.map(p => {
+      const timeAgo = getTimeAgo(p.submittedAt?.toDate ? p.submittedAt.toDate() : new Date(p.submittedAt));
+      return `<tr>
+        <td><strong>${p.city || '—'}</strong>, ${p.state || '—'}</td>
+        <td><span class="pc-fuel-badge badge-${p.fuelType?.toLowerCase()}">${p.fuelType}</span></td>
+        <td><strong>₦${Number(p.price).toLocaleString()}</strong>/L</td>
+        <td style="color:var(--muted)">${p.stationName || '—'}</td>
+        <td style="color:var(--muted);font-size:12px;">${timeAgo}</td>
+        <td>${p.verified ? '<span class="verified-badge">✓ Verified</span>' : '<span style="color:var(--muted);font-size:11px;">Pending</span>'}</td>
+        <td>
+          ${!p.verified ? `<button class="btn-verify" onclick="verifyPrice('${p.id}')">Verify</button>` : ''}
+          <button class="btn-del" onclick="deletePrice('${p.id}')">Delete</button>
+        </td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:24px;">No submissions yet</td></tr>';
+  } catch(e) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--red);padding:24px;">Error loading data</td></tr>';
+  }
+}
+
+async function deletePrice(id) {
+  if (!confirm('Delete this price report?')) return;
+  try {
+    const { fdb, doc, deleteDoc } = window._fb;
+    await deleteDoc(doc(fdb, 'prices', id));
+    allPrices = allPrices.filter(p => p.id !== id);
+    renderFeed(); updateStats(); renderAdminTable();
+    showToast('Deleted', '');
+  } catch(e) { showToast('Delete failed', 'error'); }
+}
+
+async function verifyPrice(id) {
+  try {
+    const { fdb, doc, updateDoc } = window._fb;
+    await updateDoc(doc(fdb, 'prices', id), { verified: true });
+    allPrices = allPrices.map(p => p.id === id ? { ...p, verified: true } : p);
+    renderAdminTable(); renderFeed();
+    showToast('Verified ✓', 'success');
+  } catch(e) { showToast('Update failed', 'error'); }
+}
+
+// ══════════════════════════════════════════════
+//  HELPERS
+// ══════════════════════════════════════════════
+function getTimeAgo(date) {
+  if (!date) return '—';
+  const diff = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (diff < 60) return 'Just now';
+  if (diff < 3600) return Math.floor(diff / 60) + ' min ago';
+  if (diff < 86400) return Math.floor(diff / 3600) + ' hr ago';
+  return Math.floor(diff / 86400) + ' day' + (Math.floor(diff / 86400) > 1 ? 's' : '') + ' ago';
+}
+
+function showError(el, msg) { el.textContent = msg; el.style.display = 'block'; }
+
+let toastTimer;
+function showToast(msg, type = '') {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = 'toast show' + (type ? ' ' + type : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
+}
+</script>
+</body>
+</html>
